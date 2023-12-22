@@ -223,16 +223,10 @@ lock_acquire (struct lock *lock) {
 	struct thread *cur = thread_current();
 	if(!thread_mlfqs){
 	if(lock->holder){ 
-		// if(lock->holder->priority > cur->priority){ // lock->holder와 현재 스레드간의 priority 비교는 필수인지
-		// }
+	
 		cur->wait_on_lock = lock;
 		list_insert_ordered(&lock->holder->donations, &cur->d_elem, compare_donation_priority, NULL);
-		//list_insert_ordered(&(thread_current()->wait_on_lock->holder->donations), &(thread_current()->d_elem),compare_donation_priority,NULL);
 		
-		// while(cur->wait_on_lock){ // wait_on_lock이 존재한다면,
-		// 	cur->wait_on_lock->holder->priority = cur->priority;
-		// 	cur = cur->wait_on_lock->holder;
-		// }
 		struct thread *start = thread_current();
 		while(start->wait_on_lock){ // wait_on_lock이 존재한다면 재귀 수행 -> nested donation!
 			struct thread *holder = start->wait_on_lock->holder;

@@ -67,32 +67,38 @@ err:
 }
 
 /* Find VA from spt and return page. On error, return NULL.
- * 위의 함수는 인자로 넘겨진 보조 페이지 테이블에서로부터
- * 가상 주소(va)와 대응되는 페이지 구조체를 찾아서 반환합니다. 실패했을 경우 NULL를 반환합니다.
+ * 인자로 넘겨진 보조 페이지 테이블에서로부터
+ * 가상 주소(va)와 대응되는 페이지 구조체를 찾아서 반환합니다. 
+ * 실패했을 경우 NULL를 반환합니다.
  * 
  * spt 설계 후 구현해야할 함수 2 */
 struct page *
-spt_find_page(struct supplemental_page_table *spt UNUSED, void *va UNUSED)
+spt_find_page(struct supplemental_page_table *spt, void *va)
 {
-	struct page *page = NULL;
 	/* TODO: Fill this function. */
+	struct page *page = page_lookup(&spt->spt_hash, va);
 
 	return page;
 }
 
 /* Insert PAGE into spt with validation. 
- * 인자로 주어진 보조 페이지 테이블에 페이지 구조체를 삽입합니다. 
- * 이 함수에서 주어진 보충 테이블(spt)에서 가상 주소가 존재하지 않는지 검사해야 합니다. 
+ * 인자로 주어진 보조 페이지 테이블에 페이지 구조체를 삽입합니다.
+ * 이 함수에서 주어진 보충 테이블(spt)에서 가상 주소가 존재하지 않는지 검사해야 합니다.
+ * (같은 주소값을 가지는 페이지가 해시 테이블에 있는지 확인하기)
+ * 선빈과 다름
  * 
  * spt 설계 후 구현해야할 함수 3 */
 bool 
-spt_insert_page(struct supplemental_page_table *spt UNUSED,
-										 struct page *page UNUSED)
+spt_insert_page(struct supplemental_page_table *spt,
+										 struct page *page)
 {
-	int succ = false;
+	int success = true;
 	/* TODO: Fill this function. */
+	// spt에 struct page 삽입
+	if (hash_insert(&spt->spt_hash, &page->hash_elem) == NULL)
+		return success = false;	
 
-	return succ;
+	return success;
 }
 
 void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
@@ -122,19 +128,57 @@ vm_evict_frame(void)
 	return NULL;
 }
 
+/* palloc()을 호출하여 프레임을 얻고, 사용 가능한 페이지가 없는 경우 페이지를 교체하고
+ * 반환합니다. 이 함수는 항상 유효한 주소를 반환합니다. 즉, 사용자 풀 메모리가 가득 찬 경우,
+ * 이 함수는 프레임을 교체하여 사용 가능한 메모리 공간을 얻습니다.(스왑?) */
 /* palloc() and get frame. If there is no available page, evict the page
  * and return it. This always return valid address. That is, if the user pool
  * memory is full, this function evicts the frame to get the available memory
  * space.*/
+/* palloc_get_page를 호출하여 사용자 풀로부터 새로운 물리 페이지를 가져옵니다.
+ * 사용자 풀에서 페이지를 성공적으로 가져온 경우, 프레임을 할당하고 그 멤버를 초기화한 후 반환합니다.
+ * vm_get_frame을 구현한 후에는 모든 사용자 공간 페이지(PALLOC_USER)를 이 함수를 통해 할당해야 합니다.
+ * 페이지 할당 실패 시 교체(swap out) 처리는 지금 당장은 필요 없습니다.
+ * 현재로서는 그러한 경우에 'PANIC("todo")'로 표시하세요. */
 static struct frame *
 vm_get_frame(void)
 {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+	// 사용자 풀에서 page 가져오기,(함수 안에 mutex 락 존재)
+	struct page *get_page = palloc_get_page(PAL_USER);
 
-	ASSERT(frame != NULL);
-	ASSERT(frame->page == NULL);
-	return frame;
+	if (get_page)
+	{
+		frame = malloc(sizeof(struct frame));
+		if (frame == NULL)
+			PANIC("todo: malloc failed.");
+
+		// frame 구조체 초기화하기
+		frame->kva = NULL;
+		frame->page = get_page;
+
+		// spt에 새로 할당한 get_page 추가
+		struct supplemental_page_table *spt = &thread_current()->spt;
+		bool insert_success = spt_insert_page(spt, get_page); // 맞을까? 예외처리 how?
+		if (!insert_success)
+		{
+			free(frame);
+			PANIC("todo: spt_insert_page failed.");
+		}
+
+		return frame;
+	}
+	else // get_page == NULL 경우
+	{
+		// 페이지 할당 실패 시 스왑 처리 로직 추가 해야함
+		PANIC("todo: palloc failed.");
+
+		ASSERT(frame != NULL);
+		ASSERT(frame->page == NULL);
+	
+		return frame;
+	}
 }
 
 /* Growing the stack. */
@@ -206,6 +250,7 @@ vm_do_claim_page(struct page *page)
 void 
 supplemental_page_table_init(struct supplemental_page_table *spt UNUSED)
 {
+	hash_init(&spt->spt_hash, page_hash, page_less, NULL);
 }
 
 /* Copy supplemental page table from src to dst */
@@ -213,6 +258,7 @@ bool
 supplemental_page_table_copy(struct supplemental_page_table *dst UNUSED,
 																	struct supplemental_page_table *src UNUSED)
 {
+
 }
 
 /* Free the resource hold by the supplemental page table */

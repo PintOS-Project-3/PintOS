@@ -137,7 +137,7 @@ struct thread {
 	struct list_elem c_elem; // child elem..
 	struct file *fdt[64];
 	int waiting_child; // 필요 x 
-	struct thread* parent;
+	struct thread *parent;
 	struct file *loaded_file;
 	struct semaphore fork_sema;
 	struct semaphore wait_sema;
@@ -146,8 +146,6 @@ struct thread {
 	int child_exit_status;
 	int is_exit;
 	struct list exit_child_list;
-	//struct list killed_list;
-	//struct list_elem k_elem;
 	
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

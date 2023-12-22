@@ -13,24 +13,36 @@
 #include "threads/vaddr.h"
 
 /* Page allocator.  Hands out memory in page-size (or
-   page-multiple) chunks.  See malloc.h for an allocator that
-   hands out smaller chunks.
+	 page-multiple) chunks.  See malloc.h for an allocator that
+	 hands out smaller chunks.
 
-   System memory is divided into two "pools" called the kernel
-   and user pools.  The user pool is for user (virtual) memory
-   pages, the kernel pool for everything else.  The idea here is
-   that the kernel needs to have memory for its own operations
-   even if user processes are swapping like mad.
+	 System memory is divided into two "pools" called the kernel
+	 and user pools.  The user pool is for user (virtual) memory
+	 pages, the kernel pool for everything else.  The idea here is
+	 that the kernel needs to have memory for its own operations
+	 even if user processes are swapping like mad.
 
-   By default, half of system RAM is given to the kernel pool and
-   half to the user pool.  That should be huge overkill for the
-   kernel pool, but that's just fine for demonstration purposes. */
+	 By default, half of system RAM is given to the kernel pool and
+	 half to the user pool.  That should be huge overkill for the
+	 kernel pool, but that's just fine for demonstration purposes. */
+/* 페이지 할당자. 페이지 크기(또는 페이지 배수)의 메모리 덩어리를 할당합니다.
+   더 작은 크기의 덩어리를 할당하는 할당자는 malloc.h를 참조하세요.
+
+   시스템 메모리는 커널 풀과 사용자 풀이라고 불리는 두 개의 "풀"로 나뉩니다.
+   사용자 풀은 사용자(가상) 메모리 페이지용이고, 커널 풀은 그 외의 모든 것을 위한 것입니다.
+   여기서의 아이디어는 사용자 프로세스가 많이 스왑되더라도 커널이 자체 작업을 위한 메모리를
+   가져야 한다는 것입니다.
+
+   기본적으로, 시스템 RAM의 절반은 커널 풀에, 절반은 사용자 풀에 할당됩니다.
+   이는 커널 풀에 대해 매우 과도한 것일 수 있지만, 시연 목적으로는 문제가 없습니다. */
 
 /* A memory pool. */
-struct pool {
-	struct lock lock;               /* Mutual exclusion. */
-	struct bitmap *used_map;        /* Bitmap of free pages. */
-	uint8_t *base;                  /* Base of pool. */
+/* 메모리 풀 구조체. */
+struct pool
+{
+	struct lock lock;				 /* Mutual exclusion. */
+	struct bitmap *used_map; /* Bitmap of free pages. */
+	uint8_t *base;					 /* Base of pool. 풀의 기본 주소. */
 };
 
 /* Two pools: one for kernel data, one for user pages. */
@@ -39,12 +51,15 @@ static struct pool kernel_pool, user_pool;
 /* Maximum number of pages to put in user pool. */
 size_t user_page_limit = SIZE_MAX;
 static void
-init_pool (struct pool *p, void **bm_base, uint64_t start, uint64_t end);
+init_pool(struct pool *p, void **bm_base, uint64_t start, uint64_t end);
 
-static bool page_from_pool (const struct pool *, void *page);
+/* 특정 페이지가 주어진 풀에 속하는지 확인하는 함수 */
+static bool 
+page_from_pool(const struct pool *, void *page); 
 
 /* multiboot info */
-struct multiboot_info {
+struct multiboot_info
+{
 	uint32_t flags;
 	uint32_t mem_low;
 	uint32_t mem_high;
@@ -54,7 +69,8 @@ struct multiboot_info {
 };
 
 /* e820 entry */
-struct e820_entry {
+struct e820_entry
+{
 	uint32_t size;
 	uint32_t mem_lo;
 	uint32_t mem_hi;
@@ -64,7 +80,8 @@ struct e820_entry {
 };
 
 /* Represent the range information of the ext_mem/base_mem */
-struct area {
+struct area
+{
 	uint64_t start;
 	uint64_t end;
 	uint64_t size;
@@ -73,33 +90,39 @@ struct area {
 #define BASE_MEM_THRESHOLD 0x100000
 #define USABLE 1
 #define ACPI_RECLAIMABLE 3
-#define APPEND_HILO(hi, lo) (((uint64_t) ((hi)) << 32) + (lo))
+#define APPEND_HILO(hi, lo) (((uint64_t)((hi)) << 32) + (lo))
 
 /* Iterate on the e820 entry, parse the range of basemem and extmem. */
 static void
-resolve_area_info (struct area *base_mem, struct area *ext_mem) {
-	struct multiboot_info *mb_info = ptov (MULTIBOOT_INFO);
-	struct e820_entry *entries = ptov (mb_info->mmap_base);
+resolve_area_info(struct area *base_mem, struct area *ext_mem)
+{
+	struct multiboot_info *mb_info = ptov(MULTIBOOT_INFO);
+	struct e820_entry *entries = ptov(mb_info->mmap_base);
 	uint32_t i;
 
-	for (i = 0; i < mb_info->mmap_len / sizeof (struct e820_entry); i++) {
+	for (i = 0; i < mb_info->mmap_len / sizeof(struct e820_entry); i++)
+	{
 		struct e820_entry *entry = &entries[i];
-		if (entry->type == ACPI_RECLAIMABLE || entry->type == USABLE) {
-			uint64_t start = APPEND_HILO (entry->mem_hi, entry->mem_lo);
-			uint64_t size = APPEND_HILO (entry->len_hi, entry->len_lo);
+		if (entry->type == ACPI_RECLAIMABLE || entry->type == USABLE)
+		{
+			uint64_t start = APPEND_HILO(entry->mem_hi, entry->mem_lo);
+			uint64_t size = APPEND_HILO(entry->len_hi, entry->len_lo);
 			uint64_t end = start + size;
 			printf("%llx ~ %llx %d\n", start, end, entry->type);
 
 			struct area *area = start < BASE_MEM_THRESHOLD ? base_mem : ext_mem;
 
 			// First entry that belong to this area.
-			if (area->size == 0) {
-				*area = (struct area) {
-					.start = start,
-					.end = end,
-					.size = size,
+			if (area->size == 0)
+			{
+				*area = (struct area){
+						.start = start,
+						.end = end,
+						.size = size,
 				};
-			} else {  // otherwise
+			}
+			else
+			{ // otherwise
 				// Extend start
 				if (area->start > start)
 					area->start = start;
@@ -120,69 +143,84 @@ resolve_area_info (struct area *base_mem, struct area *ext_mem) {
  * We push base_mem portion to the kernel as much as possible.
  */
 static void
-populate_pools (struct area *base_mem, struct area *ext_mem) {
+populate_pools(struct area *base_mem, struct area *ext_mem)
+{
 	extern char _end;
-	void *free_start = pg_round_up (&_end);
+	void *free_start = pg_round_up(&_end);
 
 	uint64_t total_pages = (base_mem->size + ext_mem->size) / PGSIZE;
-	uint64_t user_pages = total_pages / 2 > user_page_limit ?
-		user_page_limit : total_pages / 2;
+	uint64_t user_pages = total_pages / 2 > user_page_limit ? user_page_limit : total_pages / 2;
 	uint64_t kern_pages = total_pages - user_pages;
 
 	// Parse E820 map to claim the memory region for each pool.
-	enum { KERN_START, KERN, USER_START, USER } state = KERN_START;
+	enum
+	{
+		KERN_START,
+		KERN,
+		USER_START,
+		USER
+	} state = KERN_START;
 	uint64_t rem = kern_pages;
 	uint64_t region_start = 0, end = 0, start, size, size_in_pg;
 
-	struct multiboot_info *mb_info = ptov (MULTIBOOT_INFO);
-	struct e820_entry *entries = ptov (mb_info->mmap_base);
+	struct multiboot_info *mb_info = ptov(MULTIBOOT_INFO);
+	struct e820_entry *entries = ptov(mb_info->mmap_base);
 
 	uint32_t i;
-	for (i = 0; i < mb_info->mmap_len / sizeof (struct e820_entry); i++) {
+	for (i = 0; i < mb_info->mmap_len / sizeof(struct e820_entry); i++)
+	{
 		struct e820_entry *entry = &entries[i];
-		if (entry->type == ACPI_RECLAIMABLE || entry->type == USABLE) {
-			start = (uint64_t) ptov (APPEND_HILO (entry->mem_hi, entry->mem_lo));
-			size = APPEND_HILO (entry->len_hi, entry->len_lo);
+		if (entry->type == ACPI_RECLAIMABLE || entry->type == USABLE)
+		{
+			start = (uint64_t)ptov(APPEND_HILO(entry->mem_hi, entry->mem_lo));
+			size = APPEND_HILO(entry->len_hi, entry->len_lo);
 			end = start + size;
 			size_in_pg = size / PGSIZE;
 
-			if (state == KERN_START) {
+			if (state == KERN_START)
+			{
 				region_start = start;
 				state = KERN;
 			}
 
-			switch (state) {
-				case KERN:
-					if (rem > size_in_pg) {
-						rem -= size_in_pg;
-						break;
-					}
-					// generate kernel pool
-					init_pool (&kernel_pool,
-							&free_start, region_start, start + rem * PGSIZE);
-					// Transition to the next state
-					if (rem == size_in_pg) {
-						rem = user_pages;
-						state = USER_START;
-					} else {
-						region_start = start + rem * PGSIZE;
-						rem = user_pages - size_in_pg + rem;
-						state = USER;
-					}
+			switch (state)
+			{
+			case KERN:
+				if (rem > size_in_pg)
+				{
+					rem -= size_in_pg;
 					break;
-				case USER_START:
-					region_start = start;
+				}
+				// generate kernel pool
+				init_pool(&kernel_pool,
+									&free_start, region_start, start + rem * PGSIZE);
+				// Transition to the next state
+				if (rem == size_in_pg)
+				{
+					rem = user_pages;
+					state = USER_START;
+				}
+				else
+				{
+					region_start = start + rem * PGSIZE;
+					rem = user_pages - size_in_pg + rem;
 					state = USER;
+				}
+				break;
+			case USER_START:
+				region_start = start;
+				state = USER;
+				break;
+			case USER:
+				if (rem > size_in_pg)
+				{
+					rem -= size_in_pg;
 					break;
-				case USER:
-					if (rem > size_in_pg) {
-						rem -= size_in_pg;
-						break;
-					}
-					ASSERT (rem == size);
-					break;
-				default:
-					NOT_REACHED ();
+				}
+				ASSERT(rem == size);
+				break;
+			default:
+				NOT_REACHED();
 			}
 		}
 	}
@@ -191,17 +229,19 @@ populate_pools (struct area *base_mem, struct area *ext_mem) {
 	init_pool(&user_pool, &free_start, region_start, end);
 
 	// Iterate over the e820_entry. Setup the usable.
-	uint64_t usable_bound = (uint64_t) free_start;
+	uint64_t usable_bound = (uint64_t)free_start;
 	struct pool *pool;
 	void *pool_end;
 	size_t page_idx, page_cnt;
 
-	for (i = 0; i < mb_info->mmap_len / sizeof (struct e820_entry); i++) {
+	for (i = 0; i < mb_info->mmap_len / sizeof(struct e820_entry); i++)
+	{
 		struct e820_entry *entry = &entries[i];
-		if (entry->type == ACPI_RECLAIMABLE || entry->type == USABLE) {
+		if (entry->type == ACPI_RECLAIMABLE || entry->type == USABLE)
+		{
 			uint64_t start = (uint64_t)
-				ptov (APPEND_HILO (entry->mem_hi, entry->mem_lo));
-			uint64_t size = APPEND_HILO (entry->len_hi, entry->len_lo);
+					ptov(APPEND_HILO(entry->mem_hi, entry->mem_lo));
+			uint64_t size = APPEND_HILO(entry->len_hi, entry->len_lo);
 			uint64_t end = start + size;
 
 			// TODO: add 0x1000 ~ 0x200000, This is not a matter for now.
@@ -210,25 +250,28 @@ populate_pools (struct area *base_mem, struct area *ext_mem) {
 				continue;
 
 			start = (uint64_t)
-				pg_round_up (start >= usable_bound ? start : usable_bound);
-split:
-			if (page_from_pool (&kernel_pool, (void *) start))
+					pg_round_up(start >= usable_bound ? start : usable_bound);
+		split:
+			if (page_from_pool(&kernel_pool, (void *)start))
 				pool = &kernel_pool;
-			else if (page_from_pool (&user_pool, (void *) start))
+			else if (page_from_pool(&user_pool, (void *)start))
 				pool = &user_pool;
 			else
-				NOT_REACHED ();
+				NOT_REACHED();
 
-			pool_end = pool->base + bitmap_size (pool->used_map) * PGSIZE;
-			page_idx = pg_no (start) - pg_no (pool->base);
-			if ((uint64_t) pool_end < end) {
-				page_cnt = ((uint64_t) pool_end - start) / PGSIZE;
-				bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
-				start = (uint64_t) pool_end;
+			pool_end = pool->base + bitmap_size(pool->used_map) * PGSIZE;
+			page_idx = pg_no(start) - pg_no(pool->base);
+			if ((uint64_t)pool_end < end)
+			{
+				page_cnt = ((uint64_t)pool_end - start) / PGSIZE;
+				bitmap_set_multiple(pool->used_map, page_idx, page_cnt, false);
+				start = (uint64_t)pool_end;
 				goto split;
-			} else {
-				page_cnt = ((uint64_t) end - start) / PGSIZE;
-				bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
+			}
+			else
+			{
+				page_cnt = ((uint64_t)end - start) / PGSIZE;
+				bitmap_set_multiple(pool->used_map, page_idx, page_cnt, false);
 			}
 		}
 	}
@@ -236,110 +279,138 @@ split:
 
 /* Initializes the page allocator and get the memory size */
 uint64_t
-palloc_init (void) {
-  /* End of the kernel as recorded by the linker.
-     See kernel.lds.S. */
+palloc_init(void)
+{
+	/* End of the kernel as recorded by the linker.
+		 See kernel.lds.S. */
 	extern char _end;
-	struct area base_mem = { .size = 0 };
-	struct area ext_mem = { .size = 0 };
+	struct area base_mem = {.size = 0};
+	struct area ext_mem = {.size = 0};
 
-	resolve_area_info (&base_mem, &ext_mem);
-	printf ("Pintos booting with: \n");
-	printf ("\tbase_mem: 0x%llx ~ 0x%llx (Usable: %'llu kB)\n",
-		  base_mem.start, base_mem.end, base_mem.size / 1024);
-	printf ("\text_mem: 0x%llx ~ 0x%llx (Usable: %'llu kB)\n",
-		  ext_mem.start, ext_mem.end, ext_mem.size / 1024);
-	populate_pools (&base_mem, &ext_mem);
+	resolve_area_info(&base_mem, &ext_mem);
+	printf("Pintos booting with: \n");
+	printf("\tbase_mem: 0x%llx ~ 0x%llx (Usable: %'llu kB)\n",
+				 base_mem.start, base_mem.end, base_mem.size / 1024);
+	printf("\text_mem: 0x%llx ~ 0x%llx (Usable: %'llu kB)\n",
+				 ext_mem.start, ext_mem.end, ext_mem.size / 1024);
+	populate_pools(&base_mem, &ext_mem);
 	return ext_mem.end;
 }
 
+/* 연속된 PAGE_CNT 개수의 무료 페이지를 획득하여 반환합니다.
+	 PAL_USER 플래그가 설정되면 페이지는 사용자 풀로부터 획득되며,
+	 그렇지 않으면 커널 풀로부터 획득됩니다. FLAGS에 PAL_ZERO 플래그가 설정되어 있으면,
+	 페이지들은 0으로 채워집니다. 충분한 페이지가 없으면 NULL 포인터를 반환하되,
+	 FLAGS에 PAL_ASSERT 플래그가 설정되어 있으면, 커널이 패닉 상태에 빠집니다. */
 /* Obtains and returns a group of PAGE_CNT contiguous free pages.
-   If PAL_USER is set, the pages are obtained from the user pool,
-   otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
-   then the pages are filled with zeros.  If too few pages are
-   available, returns a null pointer, unless PAL_ASSERT is set in
-   FLAGS, in which case the kernel panics. */
+	 If PAL_USER is set, the pages are obtained from the user pool,
+	 otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
+	 then the pages are filled with zeros.  If too few pages are
+	 available, returns a null pointer, unless PAL_ASSERT is set in
+	 FLAGS, in which case the kernel panics. */
 void *
-palloc_get_multiple (enum palloc_flags flags, size_t page_cnt) {
+palloc_get_multiple(enum palloc_flags flags, size_t page_cnt)
+{
+	/* 플래그에 따라 사용자 풀 또는 커널 풀에서 페이지를 할당합니다. */
 	struct pool *pool = flags & PAL_USER ? &user_pool : &kernel_pool;
 
-	lock_acquire (&pool->lock);
-	size_t page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
-	lock_release (&pool->lock);
+	/* 풀에 대한 접근을 동기화하기 위해 잠금을 획득합니다. */
+	lock_acquire(&pool->lock); // Mutex
+
+	/* 사용 가능한 연속된 페이지를 찾고, 찾은 경우에는 비트맵을 업데이트합니다.(?) */
+	size_t page_idx = bitmap_scan_and_flip(pool->used_map, 0, page_cnt, false);
+
+	/* 잠금을 해제합니다. */
+	lock_release(&pool->lock);
+
 	void *pages;
 
+	/* 할당된 페이지가 있으면, 그 시작 주소를 계산합니다. */
 	if (page_idx != BITMAP_ERROR)
 		pages = pool->base + PGSIZE * page_idx;
 	else
-		pages = NULL;
+		pages = NULL; /* 페이지 할당에 실패하면 NULL을 반환합니다. */
 
-	if (pages) {
+	if (pages)
+	{
+		/* PAL_ZERO 플래그가 설정된 경우, 할당된 페이지를 0으로 초기화합니다. */
 		if (flags & PAL_ZERO)
-			memset (pages, 0, PGSIZE * page_cnt);
-	} else {
+			memset(pages, 0, PGSIZE * page_cnt);
+	}
+	else
+	{
+		/* PAL_ASSERT 플래그가 설정된 경우, 페이지 할당 실패 시 커널 패닉을 유발합니다. */
 		if (flags & PAL_ASSERT)
-			PANIC ("palloc_get: out of pages");
+			PANIC("palloc_get: out of pages");
 	}
 
-	return pages;
+	return pages; /* 할당된 페이지들의 시작 주소를 반환합니다. */
 }
 
+/* 하나의 사용 가능한 페이지를 가져와 그 페이지의 커널 가상 주소를 반환합니다.
+	 PAL_USER 플래그가 설정되면 페이지는 사용자 메모리 풀에서 할당됩니다.
+	 그렇지 않으면, 커널 메모리 풀에서 할당됩니다. FLAGS에 PAL_ZERO 플래그가 설정되어 있으면,
+	 할당된 페이지는 0으로 채워집니다. 사용할 수 있는 페이지가 없을 경우,
+	 FLAGS에 PAL_ASSERT 플래그가 설정되어 있지 않다면 NULL 포인터를 반환합니다.
+	 PAL_ASSERT 플래그가 설정되어 있으면, 사용 가능한 페이지가 없을 때 커널이 패닉 상태에 빠집니다. */
 /* Obtains a single free page and returns its kernel virtual
-   address.
-   If PAL_USER is set, the page is obtained from the user pool,
-   otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
-   then the page is filled with zeros.  If no pages are
-   available, returns a null pointer, unless PAL_ASSERT is set in
-   FLAGS, in which case the kernel panics. */
+	 address.
+	 If PAL_USER is set, the page is obtained from the user pool,
+	 otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
+	 then the page is filled with zeros.  If no pages are
+	 available, returns a null pointer, unless PAL_ASSERT is set in
+	 FLAGS, in which case the kernel panics. */
 void *
-palloc_get_page (enum palloc_flags flags) {
-	return palloc_get_multiple (flags, 1);
+palloc_get_page(enum palloc_flags flags)
+{
+	return palloc_get_multiple(flags, 1);
 }
 
 /* Frees the PAGE_CNT pages starting at PAGES. */
-void
-palloc_free_multiple (void *pages, size_t page_cnt) {
+void palloc_free_multiple(void *pages, size_t page_cnt)
+{
 	struct pool *pool;
 	size_t page_idx;
 
-	ASSERT (pg_ofs (pages) == 0);
+	ASSERT(pg_ofs(pages) == 0);
 	if (pages == NULL || page_cnt == 0)
 		return;
 
-	if (page_from_pool (&kernel_pool, pages))
+	if (page_from_pool(&kernel_pool, pages))
 		pool = &kernel_pool;
-	else if (page_from_pool (&user_pool, pages))
+	else if (page_from_pool(&user_pool, pages))
 		pool = &user_pool;
 	else
-		NOT_REACHED ();
+		NOT_REACHED();
 
-	page_idx = pg_no (pages) - pg_no (pool->base);
+	page_idx = pg_no(pages) - pg_no(pool->base);
 
 #ifndef NDEBUG
-	memset (pages, 0xcc, PGSIZE * page_cnt);
+	memset(pages, 0xcc, PGSIZE * page_cnt);
 #endif
-	ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
-	bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
+	ASSERT(bitmap_all(pool->used_map, page_idx, page_cnt));
+	bitmap_set_multiple(pool->used_map, page_idx, page_cnt, false);
 }
 
 /* Frees the page at PAGE. */
-void
-palloc_free_page (void *page) {
-	palloc_free_multiple (page, 1);
+void palloc_free_page(void *page)
+{
+	palloc_free_multiple(page, 1);
 }
 
 /* Initializes pool P as starting at START and ending at END */
 static void
-init_pool (struct pool *p, void **bm_base, uint64_t start, uint64_t end) {
-  /* We'll put the pool's used_map at its base.
-     Calculate the space needed for the bitmap
-     and subtract it from the pool's size. */
+init_pool(struct pool *p, void **bm_base, uint64_t start, uint64_t end)
+{
+	/* We'll put the pool's used_map at its base.
+		 Calculate the space needed for the bitmap
+		 and subtract it from the pool's size. */
 	uint64_t pgcnt = (end - start) / PGSIZE;
-	size_t bm_pages = DIV_ROUND_UP (bitmap_buf_size (pgcnt), PGSIZE) * PGSIZE;
+	size_t bm_pages = DIV_ROUND_UP(bitmap_buf_size(pgcnt), PGSIZE) * PGSIZE;
 
 	lock_init(&p->lock);
-	p->used_map = bitmap_create_in_buf (pgcnt, *bm_base, bm_pages);
-	p->base = (void *) start;
+	p->used_map = bitmap_create_in_buf(pgcnt, *bm_base, bm_pages);
+	p->base = (void *)start;
 
 	// Mark all to unusable.
 	bitmap_set_all(p->used_map, true);
@@ -348,11 +419,12 @@ init_pool (struct pool *p, void **bm_base, uint64_t start, uint64_t end) {
 }
 
 /* Returns true if PAGE was allocated from POOL,
-   false otherwise. */
+	 false otherwise. */
 static bool
-page_from_pool (const struct pool *pool, void *page) {
-	size_t page_no = pg_no (page);
-	size_t start_page = pg_no (pool->base);
-	size_t end_page = start_page + bitmap_size (pool->used_map);
+page_from_pool(const struct pool *pool, void *page)
+{
+	size_t page_no = pg_no(page);
+	size_t start_page = pg_no(pool->base);
+	size_t end_page = start_page + bitmap_size(pool->used_map);
 	return page_no >= start_page && page_no < end_page;
 }
