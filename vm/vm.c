@@ -217,10 +217,14 @@ vm_dealloc_page(struct page *page)
 
 /* Claim the page that allocate on VA. */
 bool 
-vm_claim_page(void *va UNUSED)
+vm_claim_page(void *va)
 {
-	struct page *page = NULL;
+	// struct page *page = NULL;
 	/* TODO: Fill this function */
+	// 우선 한 페이지 얻기(pt에서 빈 페이지 찾기?)
+	struct page *page = page_lookup(&thread_current()->spt.spt_hash, va);
+	if (page == NULL)
+		PANIC("vm_claim_page() failed.");
 
 	return vm_do_claim_page(page);
 }
@@ -232,10 +236,14 @@ vm_do_claim_page(struct page *page)
 	struct frame *frame = vm_get_frame();
 
 	/* Set links */
-	frame->page = page;
+	// 매핑이 이게 끝인가??
+	frame->page = page; 
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	struct supplemental_page_table *spt = &thread_current()->spt;
+	if (spt_insert_page(spt, page) == false)
+		PANIC("spt_insert_page() failed.");
 
 	return swap_in(page, frame->kva);
 }
@@ -248,7 +256,7 @@ vm_do_claim_page(struct page *page)
  * 
  * spt 설계 후 구현해야할 함수 1 */
 void 
-supplemental_page_table_init(struct supplemental_page_table *spt UNUSED)
+supplemental_page_table_init(struct supplemental_page_table *spt)
 {
 	hash_init(&spt->spt_hash, page_hash, page_less, NULL);
 }

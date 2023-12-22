@@ -47,6 +47,7 @@ struct page
 	/* 해시 테이블 사용하기 위한 멤버 정의 */
 	struct hash_elem hash_elem; /* Hash Table element */
 	// void *addr;									/* Virtual address */
+	
 
 	const struct page_operations *operations;
 	void *va;						 /* Address in terms of user space */
@@ -76,13 +77,15 @@ struct frame
 	struct page *page; /* 이 프레임과 매핑된 페이지 */
 
 	/* 프레임 관리를 위한 멤버 추가하기 */
-
+	struct hash_elem hash_elem; // 해시 테이블 사용해보자
 };
 
 /* The function table for page operations.
  * This is one way of implementing "interface" in C.
  * Put the table of "method" into the struct's member, and
- * call it whenever you needed. */
+ * call it whenever you needed.
+ * 이 구조체는 "인터페이스"를 구현하는 한 방법으로,
+ * C 언어에서 객체 지향 프로그래밍의 일부 개념을 모방합니다. */
 struct page_operations
 {
 	bool (*swap_in)(struct page *, void *);
@@ -91,7 +94,10 @@ struct page_operations
 	enum vm_type type;
 };
 
+/* 저장 매체에 저장된 페이지를 메모리로 다시 로드
+ * 성공 여부 불리언 값으로 반환 */
 #define swap_in(page, v) (page)->operations->swap_in((page), v)
+
 #define swap_out(page) (page)->operations->swap_out(page)
 #define destroy(page)              \
 	if ((page)->operations->destroy) \
@@ -106,13 +112,12 @@ struct supplemental_page_table
 };
 
 #include "threads/thread.h"
-void supplemental_page_table_init(struct supplemental_page_table *spt);
+void supplemental_page_table_init(struct supplemental_page_table *spt); // 구현
 bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 																	struct supplemental_page_table *src);
 void supplemental_page_table_kill(struct supplemental_page_table *spt);
-struct page *spt_find_page(struct supplemental_page_table *spt,
-													 void *va);
-bool spt_insert_page(struct supplemental_page_table *spt, struct page *page);
+struct page *spt_find_page(struct supplemental_page_table *spt, void *va);		// 구현
+bool spt_insert_page(struct supplemental_page_table *spt, struct page *page); // 구현
 void spt_remove_page(struct supplemental_page_table *spt, struct page *page);
 
 void vm_init(void);
