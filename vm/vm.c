@@ -4,6 +4,7 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 #include <hash.h> // 해시 테이블로 spt 구현
+#include "threads/mmu.h" // page
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -41,9 +42,13 @@ static struct frame *vm_get_victim(void);
 static bool vm_do_claim_page(struct page *page);
 static struct frame *vm_evict_frame(void);
 
+/* initializer를 가진 보류 중인 페이지 객체를 생성합니다. 페이지를 생성하려면,
+ * 이 함수나 `vm_alloc_page`를 통해 직접 생성하지 말고 만드세요. */
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
- * `vm_alloc_page`. */
+ * `vm_alloc_page`. 
+ * 이 함수는 페이지 구조체를 할당하고 페이지 타입에 맞는 적절한 초기화 함수를 세팅함으로써 
+ * 새로운 페이지를 초기화를 합니다. 그리고 유저 프로그램으로 제어권을 넘깁니다. */
 bool 
 vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writable,
 																		vm_initializer *init, void *aux)
@@ -53,14 +58,15 @@ vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writable,
 
 	struct supplemental_page_table *spt = &thread_current()->spt;
 
-	/* Check wheter the upage is already occupied or not. */
+	/* Check wheter the upage is already occupied or not.
+	 * upage가 이미 사용 중인지 확인 */
 	if (spt_find_page(spt, upage) == NULL)
 	{
-		/* TODO: Create the page, fetch the initialier according to the VM type,
-		 * TODO: and then create "uninit" page struct by calling uninit_new. You
-		 * TODO: should modify the field after calling the uninit_new. */
+		/* TODO: Create the page, fetch the initializer according to the VM type, -> 페이지를 생성하고, VM 타입에 따라 initialier를 가져옵니다.
+		 * TODO: and then create "uninit" page struct by calling uninit_new. -> 그런 다음 uninit_new를 호출하여 "uninit" 페이지 구조체를 생성합니다
+		 * TODO: You should modify the field after calling the uninit_new. -> uninit_new를 호출한 후 필드를 수정해야 합니다. */
 
-		/* TODO: Insert the page into the spt. */
+		/* TODO: Insert the page into the spt. -> 페이지를 spt에 삽입*/
 	}
 err:
 	return false;
@@ -222,7 +228,7 @@ vm_claim_page(void *va)
 	// struct page *page = NULL;
 	/* TODO: Fill this function */
 	// 우선 한 페이지 얻기(pt에서 빈 페이지 찾기?)
-	struct page *page = page_lookup(&thread_current()->spt.spt_hash, va);
+	struct page *page = spt_find_page(&thread_current()->spt.spt_hash, va);
 	if (page == NULL)
 		PANIC("vm_claim_page() failed.");
 
@@ -244,6 +250,9 @@ vm_do_claim_page(struct page *page)
 	struct supplemental_page_table *spt = &thread_current()->spt;
 	if (spt_insert_page(spt, page) == false)
 		PANIC("spt_insert_page() failed.");
+	
+	if (!pml4_set_page(&thread_current()->pml4, page->va, frame->kva, true)) // bool rw 수정하기
+		PANIC("pml4_set_page() failed.");
 
 	return swap_in(page, frame->kva);
 }
