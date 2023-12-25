@@ -2,6 +2,7 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
+#include <hash.h>
 
 enum vm_type {
 	/* page not initialized */
@@ -33,6 +34,7 @@ enum vm_type {
 
 struct page_operations;
 struct thread;
+struct list frame_list;
 
 #define VM_TYPE(type) ((type) & 7)
 
@@ -40,13 +42,21 @@ struct thread;
  * This is kind of "parent class", which has four "child class"es, which are
  * uninit_page, file_page, anon_page, and page cache (project4).
  * DO NOT REMOVE/MODIFY PREDEFINED MEMBER OF THIS STRUCTURE. */
-struct page {
+
+/* "page" 구조체의 표현.
+
+	이것은 "parent class"의 역할을 하는데, 네 개의 "child class"를 가지고 있습니다.
+	이 "child class"들은 uninit_page, file_page, anon_page, 그리고 page cache (프로젝트4)입니다.
+	이 구조체의 미리 정의된 멤버를 제거하거나 수정하지 마십시오. */
+
+struct page { //가상 메모리에서의 페이지
 	const struct page_operations *operations;
 	void *va;              /* Address in terms of user space */
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
-
+	struct hash_elem hash_elem;
+	bool writable;
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
 	union {
@@ -63,6 +73,7 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+	struct list_elem frame_elem;
 };
 
 /* The function table for page operations.
@@ -85,7 +96,9 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct hash spt_hash;
 };
+
 
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);
