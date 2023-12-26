@@ -44,16 +44,26 @@ struct thread;
  * DO NOT REMOVE/MODIFY PREDEFINED MEMBER OF THIS STRUCTURE. */
 struct page
 {
-	/* 해시 테이블 사용하기 위한 멤버 정의 */
-	struct hash_elem hash_elem; /* Hash Table element */
-	// void *addr;									/* Virtual address */
-	
-
 	const struct page_operations *operations;
 	void *va;						 /* Address in terms of user space */
 	struct frame *frame; /* Back reference for frame */
+	
+	/* --- PROJECT 3 : VM ------------------------------------ */
+	/* 해시 테이블 사용하기 위한 멤버 정의 */
+	struct hash_elem hash_elem; /* Hash Table element */
 
-	/* Your implementation */
+	size_t swap_slot;			/* 스왑 슬롯 */
+
+	struct file *load_file; /* 가상주소와 맵핑된 파일 */
+
+	off_t offset;			/* 읽어야 할 파일 오프셋 */
+	size_t read_bytes;		/* 가상페이지에 쓰여져 있는 데이터 크기 */
+	size_t zero_bytes;		/* 0으로 채울 남은 페이지의 바이트 */
+
+	bool writable; /* True일 경우 해당 주소에 write 가능, False일 경우 해당 주소에 write 불가능 */
+	uint8_t type;  /* VM_UNINIT, VM_FILE, VM_ANON의 타입 */
+	/* ------------------------------------------------------- */
+
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -68,6 +78,16 @@ struct page
 	};
 };
 
+struct aux_for_lazy_load
+{
+	struct file *load_file; /* 가상주소와 맵핑된 파일 */
+	off_t offset;			/* 읽어야 할 파일 오프셋 */
+	size_t read_bytes;		/* 가상페이지에 쓰여져 있는 데이터 크기 */
+	size_t zero_bytes;		/* 0으로 채울 남은 페이지의 바이트 */
+};
+
+struct list frame_table; // frame table
+
 /* The representation of "frame" */
 struct frame
 {
@@ -77,7 +97,7 @@ struct frame
 	struct page *page; /* 이 프레임과 매핑된 페이지 */
 
 	/* 프레임 관리를 위한 멤버 추가하기 */
-	struct hash_elem hash_elem; // 해시 테이블 사용해보자
+	struct list_elem frame_elem;
 };
 
 /* The function table for page operations.

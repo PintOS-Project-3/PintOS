@@ -6,8 +6,13 @@
 #include <hash.h> // 해시 테이블로 spt 구현
 #include "threads/mmu.h" // page
 
+/* project 3 : Swap in&out */
+struct list frame_table;
+struct list_elem *start;
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
+/* 처음 가상 메모리를 초기화 할 때 frame table을 여기서 함께 초기화 해줘야 함 */
 void 
 vm_init(void)
 {
@@ -19,6 +24,8 @@ vm_init(void)
 	register_inspect_intr();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	list_init(&frame_table); // 추가
+	start = list_begin(&frame_table); // 추가
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -42,13 +49,22 @@ static struct frame *vm_get_victim(void);
 static bool vm_do_claim_page(struct page *page);
 static struct frame *vm_evict_frame(void);
 
-/* initializer를 가진 보류 중인 페이지 객체를 생성합니다. 페이지를 생성하려면,
- * 이 함수나 `vm_alloc_page`를 통해 직접 생성하지 말고 만드세요. */
+/* 함수의 목적: 메모리 할당의 준비 단계(커널이 새 page request를 받으면 호출)
+ * 1. 페이지 할당과 초기화: 이 함수는 새로운 페이지를 할당하고, 
+ * 		페이지 타입에 따라 적절한 초기화 함수를 설정합니다. 
+ * 		이는 페이지를 물리 메모리에 매핑하기 전에 필요한 사전 준비 단계를 수행합니다.
+ * 2. Lazy Loading 준비: 함수는 페이지에 대한 구조체를 생성하고 초기화하지만, 
+ * 		실제 물리 메모리 할당은 지연시킵니다. 
+ * 		이는 페이지가 실제로 필요할 때까지 물리 메모리 할당을 미루는 것을 의미합니다.
+ * 3. 페이지 타입에 따른 처리: 다양한 페이지 타입(VM_ANON, VM_FILE 등)에 대한 처리를 준비합니다. 
+ * 		각 타입에 따라 페이지를 다르게 초기화하거나 관리할 수 있습니다. */
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
  * `vm_alloc_page`. 
- * 이 함수는 페이지 구조체를 할당하고 페이지 타입에 맞는 적절한 초기화 함수를 세팅함으로써 
- * 새로운 페이지를 초기화를 합니다. 그리고 유저 프로그램으로 제어권을 넘깁니다. */
+/* 함수 동작 과정
+ * 1. 새로운 page를 할당하고
+ * 2. 각 페이지 타입에 맞는 initializer를 셋팅하고
+ * 3. 유저 프로그램에게 다시 control을 넘긴다. */
 bool 
 vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writable,
 																		vm_initializer *init, void *aux)
@@ -59,7 +75,8 @@ vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writable,
 	struct supplemental_page_table *spt = &thread_current()->spt;
 
 	/* Check wheter the upage is already occupied or not.
-	 * upage가 이미 사용 중인지 확인 */
+	 * upage가 이미 사용 중인지 확인
+	 * 해당 페이지가 없어야 초기화를 해준다. */
 	if (spt_find_page(spt, upage) == NULL)
 	{
 		/* TODO: Create the page, fetch the initializer according to the VM type, -> 페이지를 생성하고, VM 타입에 따라 initialier를 가져옵니다.
@@ -67,6 +84,22 @@ vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writable,
 		 * TODO: You should modify the field after calling the uninit_new. -> uninit_new를 호출한 후 필드를 수정해야 합니다. */
 
 		/* TODO: Insert the page into the spt. -> 페이지를 spt에 삽입*/
+		struct page *page = (struct page *)malloc(sizeof(struct page));
+
+		switch(VM_TYPE(type))
+		{
+			case VM_ANON:
+				/* Fetch first, page_initialize may overwrite the values 
+				 * uninit_new(): 내 인자를 통해 정보를 새로 만들 페이지에 넣어준다 */
+				uninit_new(page, pg_round_down(upage), init, type, aux, anon_initializer);
+				break;
+			case VM_FILE:	
+				uninit_new(page, pg_round_down(upage), init, type, aux, file_backed_initializer);
+			break;
+		}
+		page->writable = writable;
+
+		return spt_insert_page(spt, page);
 	}
 err:
 	return false;
@@ -82,9 +115,12 @@ struct page *
 spt_find_page(struct supplemental_page_table *spt, void *va)
 {
 	/* TODO: Fill this function. */
-	struct page *page = page_lookup(&spt->spt_hash, va);
+	struct page *page = page_lookup(&spt->spt_hash, va); // pg_round_down?
 
-	return page;
+	if (page)
+		return page;
+
+	return NULL;
 }
 
 /* Insert PAGE into spt with validation. 
@@ -113,23 +149,38 @@ void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
 	return true;
 }
 
-/* Get the struct frame, that will be evicted. */
+/* Get the struct frame, that will be evicted.
+ * 쫓아낼 페이지(frame) 찾기: LRU 알고리즘, 선형 탐색 
+ * access bit가 false인 pte 찾기 */
 static struct frame *
 vm_get_victim(void)
 {
 	struct frame *victim = NULL;
 	/* TODO: The policy for eviction is up to you. */
+	struct thread *curr = thread_current();
+	struct list_elem *e, *start;
+
+	for (start = e; start != list_end(&frame_table); start = list_next(start))
+	{
+		victim = list_entry(start, struct frame, frame_elem);
+		if (pml4_is_accessed(curr->pml4, victim->page->va))
+			pml4_set_accessed(curr->pml4, victim->page->va, false);
+		else
+			return victim;
+	}
 
 	return victim;
 }
 
 /* Evict one page and return the corresponding frame.
- * Return NULL on error.*/
+ * Return NULL on error.
+ * page에 연결된 frame 안의 데이터를 디스크로 내린다. */
 static struct frame *
 vm_evict_frame(void)
 {
-	struct frame *victim UNUSED = vm_get_victim();
+	struct frame *victim = vm_get_victim();  // 비우고자 하는 프레임: victim // 실제 제거 일어남
 	/* TODO: swap out the victim and return the evicted frame. */
+	swap_out(victim->page); // 추가
 
 	return NULL;
 }
@@ -151,40 +202,32 @@ vm_get_frame(void)
 {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
-	// 사용자 풀에서 page 가져오기,(함수 안에 mutex 락 존재)
-	struct page *get_page = palloc_get_page(PAL_USER);
+	frame = (struct frame *)malloc(sizeof(struct frame));
 
-	if (get_page)
+	// user pool에서 page 하나 할당(함수 안에 mutex 락 존재)
+	struct page *kva = palloc_get_page(PAL_USER);
+
+	frame->kva = kva;
+
+	/* if 프레임이 꽉 차서 할당받을 수 없다면 페이지 교체 실시
+	   else 성공했다면 frame 구조체 커널 주소 멤버에 위에서 할당받은 메모리 커널 주소 넣기 */
+	if (frame->kva == NULL)
 	{
-		frame = malloc(sizeof(struct frame));
-		if (frame == NULL)
-			PANIC("todo: malloc failed.");
-
-		// frame 구조체 초기화하기
-		frame->kva = NULL;
-		frame->page = get_page;
-
-		// spt에 새로 할당한 get_page 추가
-		struct supplemental_page_table *spt = &thread_current()->spt;
-		bool insert_success = spt_insert_page(spt, get_page); // 맞을까? 예외처리 how?
-		if (!insert_success)
-		{
-			free(frame);
-			PANIC("todo: spt_insert_page failed.");
-		}
+		frame = vm_evict_frame(); // frame에서 공간 내리고 새로 할당받아온다.
+		frame->page = NULL;
 
 		return frame;
 	}
-	else // get_page == NULL 경우
-	{
-		// 페이지 할당 실패 시 스왑 처리 로직 추가 해야함
-		PANIC("todo: palloc failed.");
 
-		ASSERT(frame != NULL);
-		ASSERT(frame->page == NULL);
-	
-		return frame;
-	}
+	/* 새 프레임을 프레임 테이블에 넣어 관리한다. */
+	list_push_back(&frame_table, &frame->frame_elem);
+
+	frame->page = NULL;
+
+	ASSERT(frame != NULL);
+	ASSERT(frame->page == NULL);
+
+	return frame;
 }
 
 /* Growing the stack. */
@@ -207,7 +250,36 @@ vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
+	/* Validate the fault */
+	if (!addr || is_kernel_vaddr(addr) || !not_present)
+		return false;
+
 	/* TODO: Your code goes here */
+	page = spt_find_page(spt, addr);
+
+	if (!page)
+		return false;
+
+	// stack growth 구현과 그 이후를 위한 코드
+	// if (!page)
+	// {
+	// 	if (addr >= USER_STACK - (1 << 20) && USER_STACK > addr && addr >= f->rsp - 8 && addr < thread_current()->stack_bottom)
+	// 	{
+	// 		void *fpage = thread_current()->stack_bottom - PGSIZE;
+	// 		if (vm_stack_growth(fpage))
+	// 		{
+	// 			page = spt_find_page(spt, fpage);
+	// 		}
+	// 		else
+	// 		{
+	// 			return false;
+	// 		}
+	// 	}
+	// 	else
+	// 	{
+	// 		return false;
+	// 	}
+	// }
 
 	return vm_do_claim_page(page);
 }
@@ -221,16 +293,21 @@ vm_dealloc_page(struct page *page)
 	free(page);
 }
 
-/* Claim the page that allocate on VA. */
+/* 클레임은 물리 프레임을 페이지에 할당해주는 것을 의미,
+ * 1. vm_get_frame() 함수를 호출해 frame을 받아온다. 
+ * 2. 이후, 인자로 받은 va를 이용해, 
+ * 		supplemental page table에서 frame과 연결해주고자 하는 페이지를 찾는다.
+ * Claim the page that allocate on VA. */
 bool 
 vm_claim_page(void *va)
 {
-	// struct page *page = NULL;
+	struct page *page = NULL;
 	/* TODO: Fill this function */
 	// 우선 한 페이지 얻기(pt에서 빈 페이지 찾기?)
-	struct page *page = spt_find_page(&thread_current()->spt.spt_hash, va);
+	page = spt_find_page(&thread_current()->spt, va);
+
 	if (page == NULL)
-		PANIC("vm_claim_page() failed.");
+		return false; // 추가
 
 	return vm_do_claim_page(page);
 }
@@ -239,20 +316,20 @@ vm_claim_page(void *va)
 static bool
 vm_do_claim_page(struct page *page)
 {
-	struct frame *frame = vm_get_frame();
+	if (!page || !is_user_vaddr(page->va)) // 페이지의 주소가 커널 va 일 수 있나?
+		return false;
 
-	/* Set links */
-	// 매핑이 이게 끝인가??
-	frame->page = page; 
+	struct frame *frame = vm_get_frame(); // 물리 frame 할당 -> page와 연결 X
+
+	/* Set links, 할당된 frame과 page 연결 */
+	frame->page = page;
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
-	struct supplemental_page_table *spt = &thread_current()->spt;
-	if (spt_insert_page(spt, page) == false)
-		PANIC("spt_insert_page() failed.");
-	
-	if (!pml4_set_page(&thread_current()->pml4, page->va, frame->kva, true)) // bool rw 수정하기
-		PANIC("pml4_set_page() failed.");
+	/* 페이지의 VA를 프레임의 PA에 매핑하기 위해 PTE insert */
+	// struct supplemental_page_table *spt = &thread_current()->spt;
+	if (!pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable)) // 추가
+		return false;
 
 	return swap_in(page, frame->kva);
 }

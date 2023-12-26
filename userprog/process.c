@@ -835,6 +835,25 @@ lazy_load_segment(struct page *page, void *aux)
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	struct aux_for_lazy_load *lazy_load = (struct aux_for_lazy_load *)aux;
+	struct file *file = lazy_load->load_file;
+	size_t offset = lazy_load->offset;
+	size_t read_bytes = lazy_load->read_bytes;
+	size_t zero_bytes = lazy_load->zero_bytes;
+
+	file_seek(file, offset);
+
+	if (file_read(file, page->frame->kva, read_bytes) != (int)read_bytes)
+	{
+		// printf("\n\n### file_read 값 : %d\n\n", file_read(file, page->frame->kva, read_bytes));
+		// printf("\n\n### read_bytes 값 : %d\n\n", read_bytes);
+
+		return false;
+	}
+
+	memset(page->frame->kva + read_bytes, 0, zero_bytes);
+
+	return true;
 }
 
 /* 파일 FILE의 오프셋 OFS부터 시작하는 세그먼트를 UPAGE 주소에 로드합니다.
@@ -885,16 +904,27 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
 		/* 보조 데이터(aux)를 설정하여 lazy_load_segment에 전달합니다. */
-		void *aux = NULL;
+		// void *aux = NULL;
+		struct aux_for_lazy_load *aux = (struct aux_for_lazy_load *)malloc(sizeof(struct aux_for_lazy_load)); // 추가
+		
+		/* page fault 시에만 lazy load */ // 추가
+		aux->load_file = file;
+		aux->offset = ofs;
+		aux->read_bytes = page_read_bytes;
+		aux->zero_bytes = page_zero_bytes;
+		
 		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
 																				writable, lazy_load_segment, aux))
+		{
+			free(aux); // 추가
 			return false; // 페이지 할당 실패 시 false를 반환합니다.
-
+		}
 		/* Advance. */
 		/* read_bytes, zero_bytes, upage를 업데이트하며 다음 페이지로 진행합니다. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += page_read_bytes; // 추가
 	}
 	return true; // 모든 페이지가 성공적으로 처리되면 true를 반환합니다.
 }

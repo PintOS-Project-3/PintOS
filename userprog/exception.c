@@ -106,6 +106,14 @@ kill (struct intr_frame *f) {
 	}
 }
 
+/* 페이지 폴트 핸들러입니다. 이 함수는 가상 메모리를 구현하기 위해 완성되어야 합니다.
+   프로젝트 2의 일부 해결책은 이 코드를 수정해야 할 수도 있습니다.
+
+   진입 시, CR2(컨트롤 레지스터 2)에는 폴트가 발생한 주소가 있으며,
+   exception.h의 PF_* 매크로로 설명된 형식의 F의 error_code 멤버에 폴트에 대한 정보가 있습니다.
+   여기 제시된 예제 코드는 이 정보를 파싱하는 방법을 보여줍니다.
+   "인터럽트 14--페이지 폴트 예외(#PF)"의 [IA32-v3a] 섹션 5.15 "예외 및 인터럽트 참조"에서
+   더 많은 정보를 찾을 수 있습니다. */
 /* Page fault handler.  This is a skeleton that must be filled in
    to implement virtual memory.  Some solutions to project 2 may
    also require modifying this code.
@@ -128,15 +136,19 @@ page_fault (struct intr_frame *f) {
 	   accessed to cause the fault.  It may point to code or to
 	   data.  It is not necessarily the address of the instruction
 	   that caused the fault (that's f->rip). */
-
+	/* 폴트 주소를 얻습니다. 이 주소는 폴트를 발생시킨 접근된 가상 주소입니다.
+	   코드나 데이터를 가리킬 수 있습니다. 
+		 이 주소는 폴트를 발생시킨 명령어의 주소(f->rip)는 아닙니다. */
 	fault_addr = (void *) rcr2();
 
 	/* Turn interrupts back on (they were only off so that we could
 	   be assured of reading CR2 before it changed). */
+	/* 인터럽트를 다시 켭니다 (CR2를 변경하기 전에 읽을 수 있도록 인터럽트가 꺼져 있었습니다). */
 	intr_enable ();
 
 
 	/* Determine cause. */
+	/* 원인을 결정합니다. */
 	not_present = (f->error_code & PF_P) == 0;
 	write = (f->error_code & PF_W) != 0;
 	user = (f->error_code & PF_U) != 0;
@@ -151,6 +163,7 @@ page_fault (struct intr_frame *f) {
 	page_fault_cnt++;
 	sys_exit(-1);
 	/* If the fault is true fault, show info and exit. */
+	/* 진짜 폴트인 경우, 정보를 출력하고 종료합니다. */
 	printf ("Page fault at %p: %s error %s page in %s context.\n",
 			fault_addr,
 			not_present ? "not present" : "rights violation",
