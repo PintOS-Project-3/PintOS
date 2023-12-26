@@ -253,6 +253,11 @@ strtok_r (char *s, const char *delimiters, char **save_ptr) {
 	return token;
 }
 
+/* memset 함수는 주어진 메모리 영역을 특정 값으로 채웁니다.
+ * 이 함수는 대상 메모리 영역의 포인터(dst_), 채울 값(value), 
+ * 그리고 채울 바이트 수(size)를 인자로 받습니다. 
+ * 
+ * 이 함수는 배열이나 구조체와 같은 메모리 영역을 특정 값으로 초기화할 때 사용됩니다. */
 /* Sets the SIZE bytes in DST to VALUE. */
 void *
 memset (void *dst_, int value, size_t size) {

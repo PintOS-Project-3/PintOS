@@ -145,6 +145,14 @@ file_length (struct file *file) {
 
 /* Sets the current position in FILE to NEW_POS bytes from the
  * start of the file. */
+/* 
+ * file_seek 함수는 파일 내에서 현재 위치를 새로운 위치로 설정합니다.
+ * 이 함수는 'file'이라는 파일 객체와, 파일의 시작점으로부터 바이트 단위로 측정된
+ * 새로운 위치 'new_pos'를 인자로 받습니다.
+ *
+ * 이 함수는 파일 내에서 특정 위치로 이동하는 데 사용됩니다.
+ * 예를 들어, 파일의 중간부터 데이터를 읽거나 쓰기 위해 파일 포인터의 위치를 조정할 때 사용할 수 있습니다.
+ */
 void
 file_seek (struct file *file, off_t new_pos) {
 	ASSERT (file != NULL);

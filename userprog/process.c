@@ -835,23 +835,18 @@ lazy_load_segment(struct page *page, void *aux)
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
-	struct aux_for_lazy_load *lazy_load = (struct aux_for_lazy_load *)aux;
-	struct file *file = lazy_load->load_file;
-	size_t offset = lazy_load->offset;
-	size_t read_bytes = lazy_load->read_bytes;
-	size_t zero_bytes = lazy_load->zero_bytes;
+	struct aux_for_lazy_load *lazy_load = (struct aux_for_lazy_load *) aux;
+	struct file *file = lazy_load->mapped_file;
+	size_t ofs = lazy_load->ofs;
+	size_t page_read_bytes = lazy_load->page_read_bytes;
+	size_t page_zero_bytes = lazy_load->page_zero_bytes;
 
-	file_seek(file, offset);
+	file_seek(file, ofs);
 
-	if (file_read(file, page->frame->kva, read_bytes) != (int)read_bytes)
-	{
-		// printf("\n\n### file_read 값 : %d\n\n", file_read(file, page->frame->kva, read_bytes));
-		// printf("\n\n### read_bytes 값 : %d\n\n", read_bytes);
-
+	if (file_read(file, page->frame->kva, page_read_bytes) != (int)page_read_bytes)
 		return false;
-	}
 
-	memset(page->frame->kva + read_bytes, 0, zero_bytes);
+	memset(page->frame->kva + page_read_bytes, 0, page_zero_bytes); // kva의 데이터를 0으로 초기화
 
 	return true;
 }
@@ -886,7 +881,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 						 uint32_t read_bytes, uint32_t zero_bytes, bool writable)
 {
 	/* 입력된 read_bytes와 zero_bytes의 합이 페이지 크기의 배수인지 확인합니다.
-  그리고 upage가 페이지 정렬이 맞는지, ofs가 페이지 크기의 배수인지 확인합니다. */
+	그리고 upage가 페이지 정렬이 맞는지, ofs가 페이지 크기의 배수인지 확인합니다. */
 	ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
 	ASSERT(pg_ofs(upage) == 0);
 	ASSERT(ofs % PGSIZE == 0);
@@ -898,7 +893,9 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		 * We will read PAGE_READ_BYTES bytes from FILE
 		 * and zero the final PAGE_ZERO_BYTES bytes. */
 		/* 이 페이지를 어떻게 채울지 계산합니다.
-     * PAGE_READ_BYTES 바이트는 파일에서 읽고, PAGE_ZERO_BYTES 바이트는 0으로 채웁니다. */
+		 * PAGE_READ_BYTES 바이트는 파일에서 읽고, PAGE_ZERO_BYTES 바이트는 0으로 채웁니다.
+		 * 읽으려는 바이트 수가 PGSIZE(4KB)보다 작으면 읽으려는 만큼만 읽게,
+		 * 크면 PGSIZE만큼만 읽게 한다. */
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
@@ -906,17 +903,17 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		/* 보조 데이터(aux)를 설정하여 lazy_load_segment에 전달합니다. */
 		// void *aux = NULL;
 		struct aux_for_lazy_load *aux = (struct aux_for_lazy_load *)malloc(sizeof(struct aux_for_lazy_load)); // 추가
-		
-		/* page fault 시에만 lazy load */ // 추가
-		aux->load_file = file;
-		aux->offset = ofs;
-		aux->read_bytes = page_read_bytes;
-		aux->zero_bytes = page_zero_bytes;
-		
+
+		/* page fault 시에만 lazy load */
+		aux->mapped_file = file;
+		aux->ofs = ofs;
+		aux->page_read_bytes = page_read_bytes;
+		aux->page_zero_bytes = page_zero_bytes;
+
 		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
 																				writable, lazy_load_segment, aux))
 		{
-			free(aux); // 추가
+			free(aux);		// 추가
 			return false; // 페이지 할당 실패 시 false를 반환합니다.
 		}
 		/* Advance. */
@@ -926,6 +923,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		upage += PGSIZE;
 		ofs += page_read_bytes; // 추가
 	}
+
 	return true; // 모든 페이지가 성공적으로 처리되면 true를 반환합니다.
 }
 

@@ -60,7 +60,7 @@ static struct frame *vm_evict_frame(void);
  * 		각 타입에 따라 페이지를 다르게 초기화하거나 관리할 수 있습니다. */
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
- * `vm_alloc_page`. 
+ * `vm_alloc_page`. */
 /* 함수 동작 과정
  * 1. 새로운 page를 할당하고
  * 2. 각 페이지 타입에 맞는 initializer를 셋팅하고
@@ -69,7 +69,6 @@ bool
 vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writable,
 																		vm_initializer *init, void *aux)
 {
-
 	ASSERT(VM_TYPE(type) != VM_UNINIT)
 
 	struct supplemental_page_table *spt = &thread_current()->spt;
@@ -83,7 +82,7 @@ vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writable,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. -> 그런 다음 uninit_new를 호출하여 "uninit" 페이지 구조체를 생성합니다
 		 * TODO: You should modify the field after calling the uninit_new. -> uninit_new를 호출한 후 필드를 수정해야 합니다. */
 
-		/* TODO: Insert the page into the spt. -> 페이지를 spt에 삽입*/
+		/* TODO: Insert the page into the spt. */
 		struct page *page = (struct page *)malloc(sizeof(struct page));
 
 		switch(VM_TYPE(type))
@@ -93,13 +92,14 @@ vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writable,
 				 * uninit_new(): 내 인자를 통해 정보를 새로 만들 페이지에 넣어준다 */
 				uninit_new(page, pg_round_down(upage), init, type, aux, anon_initializer);
 				break;
+				
 			case VM_FILE:	
 				uninit_new(page, pg_round_down(upage), init, type, aux, file_backed_initializer);
 			break;
 		}
 		page->writable = writable;
 
-		return spt_insert_page(spt, page);
+		return spt_insert_page(spt, page); // page를 spt에 삽입
 	}
 err:
 	return false;
@@ -205,9 +205,7 @@ vm_get_frame(void)
 	frame = (struct frame *)malloc(sizeof(struct frame));
 
 	// user pool에서 page 하나 할당(함수 안에 mutex 락 존재)
-	struct page *kva = palloc_get_page(PAL_USER);
-
-	frame->kva = kva;
+	frame->kva = palloc_get_page(PAL_USER);
 
 	/* if 프레임이 꽉 차서 할당받을 수 없다면 페이지 교체 실시
 	   else 성공했다면 frame 구조체 커널 주소 멤버에 위에서 할당받은 메모리 커널 주소 넣기 */
@@ -293,11 +291,7 @@ vm_dealloc_page(struct page *page)
 	free(page);
 }
 
-/* 클레임은 물리 프레임을 페이지에 할당해주는 것을 의미,
- * 1. vm_get_frame() 함수를 호출해 frame을 받아온다. 
- * 2. 이후, 인자로 받은 va를 이용해, 
- * 		supplemental page table에서 frame과 연결해주고자 하는 페이지를 찾는다.
- * Claim the page that allocate on VA. */
+/* Claim the page that allocate on VA. */
 bool 
 vm_claim_page(void *va)
 {
@@ -326,8 +320,7 @@ vm_do_claim_page(struct page *page)
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
-	/* 페이지의 VA를 프레임의 PA에 매핑하기 위해 PTE insert */
-	// struct supplemental_page_table *spt = &thread_current()->spt;
+	/* page의 VA를 frame의 PA에 매핑하기 위한 PTE 세팅 */
 	if (!pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable)) // 추가
 		return false;
 

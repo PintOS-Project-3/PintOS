@@ -78,12 +78,14 @@ struct page
 	};
 };
 
-struct aux_for_lazy_load
-{
-	struct file *load_file; /* 가상주소와 맵핑된 파일 */
-	off_t offset;			/* 읽어야 할 파일 오프셋 */
-	size_t read_bytes;		/* 가상페이지에 쓰여져 있는 데이터 크기 */
-	size_t zero_bytes;		/* 0으로 채울 남은 페이지의 바이트 */
+// 한양대 PPT virtual memory 파트에서 12 페이지 참고
+struct aux_for_lazy_load {
+	struct file *mapped_file;
+	off_t ofs;
+	uint32_t page_read_bytes; /* 가상페이지에 쓰여져 있는 데이터 크기 */
+	uint32_t page_zero_bytes; /* 0으로 채울 남은 페이지의 바이트 */
+	uint8_t upage;					// struct page에 담겨져 있다.
+	bool writable;
 };
 
 struct list frame_table; // frame table

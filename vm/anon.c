@@ -32,6 +32,7 @@ bool anon_initializer(struct page *page, enum vm_type type, void *kva)
 {
 	/* Set up the handler */
 	page->operations = &anon_ops;
+	// anon_page->swap_index = -1; // 추가
 
 	struct anon_page *anon_page = &page->anon;
 }
